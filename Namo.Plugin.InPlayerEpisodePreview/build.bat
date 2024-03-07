@@ -9,6 +9,12 @@ if not exist ".build" mkdir .build
 REM Compile Web code
 set client=WEB
 
+IF NOT EXIST "C:\Program Files\nodejs\node.exe" (
+    echo Please install Node.js to run this script
+    @pause
+    Exit /b
+)
+
 echo "Building Web Code"
 call npx webpack --config webpack.config.js --env CLIENT=%client%
 
