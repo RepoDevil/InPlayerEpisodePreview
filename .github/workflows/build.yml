@@ -1,0 +1,76 @@
+name: 'Build Plugin'
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 18
+
+    - name: Build webpack
+      working-directory: ./Namo.Plugin.InPlayerEpisodePreview
+      run: |
+        npm install --save-dev webpack-cli
+        npx webpack --config webpack.config.js --env CLIENT=WEB
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 8.0.x
+
+    - name: Restore dependencies
+      run: |
+        dotnet nuget add source --username ${{ github.repository_owner }} --password ${{ secrets.GITHUB_TOKEN }} --store-password-in-clear-text --name jellyfin-pre "https://nuget.pkg.github.com/jellyfin/index.json"
+        dotnet tool install --global dotnet-outdated-tool
+        dotnet outdated -pre Always -u -inc Jellyfin
+
+    - name: Retrieve commit identification
+      run: |
+        GIT_HASH=$(git rev-parse --short HEAD)
+        echo "GIT_HASH=${GIT_HASH}" >> $GITHUB_ENV
+
+    - name: Build
+      run: dotnet build --no-restore
+
+    - name: Create archive
+      uses: vimtor/action-zip@v1.2
+      if: github.event_name != 'pull_request'
+      with:
+        files: |
+          Namo.Plugin.InPlayerEpisodePreview/bin/Debug/net6.0/Namo.Plugin.InPlayerEpisodePreview.dll
+        dest:  inPlayerEpisodePreview-${{ env.GIT_HASH }}-server.zip
+
+    - name: Publish prerelease
+      uses: 8bitDream/action-github-releases@v1.0.0
+      if: github.event_name != 'pull_request'
+      with:
+        repo_token: "${{ secrets.GITHUB_TOKEN }}"
+        automatic_release_tag: preview
+        prerelease: true
+        title: inPlayerEpisodePreview-${{ env.GIT_HASH }}-server
+        files: |
+          inPlayerEpisodePreview-${{ env.GIT_HASH }}-server.zip
+
+    - name: Purge obsolete prerelease
+      id: delete-pre-releases
+      uses: sgpublic/delete-release-action@master
+      with:
+        pre-release-drop: true
+        pre-release-keep-count: 1
+        pre-release-drop-tag: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
